@@ -1,0 +1,141 @@
+#!/bin/bash
+
+if [ "$USER" != "root" ]; then
+	echo "$USER is not root." >&2
+	exit 1
+fi
+
+if [ -z "$1" -o -z "$2" ]; then
+	echo "$0 IMAGE.img ROOT_DIR" >&2
+	exit 1
+fi
+
+if [ ! -f "$1" ]; then
+	echo "$1 is not a file." >&2
+	exit 1
+fi
+
+if [ ! -d "$2" ]; then
+	echo "$2 is not a directory." >&2
+	exit 1
+fi
+
+image_file="$(readlink -f "$1")"
+image_mount_dir="$(readlink -f "$2")"
+
+cd $(readlink -f $(dirname ${BASH_SOURCE[0]}))
+
+. lib/chroot.sh
+. lib/loop.sh
+. lib/traps.sh
+
+set -ex
+
+PT_TYPE_MBR='mbr'
+PT_TYPE_GPT='gpt'
+PART_TYPE_EFI='07'
+PART_TYPE_LINUX='83'
+PART_TYPE_MBR_EFI_GREP=', type=\(ef\|07\|0b\|0c\)'
+PART_TYPE_MBR_LINUX_GREP=', type=83'
+PART_TYPE_GPT_EFI_GREP='\(EF00 EFI\|0700 Microsoft\)'
+PART_TYPE_GPT_LINUX_GREP='8300 Linux'
+
+image_pt_type_str=$(file -bks "$image_file")
+
+#if [ "${image_pt_type_str/GPT partition table/}" != "$image_pt_type_str" ]; then
+	image_pt_type=$PT_TYPE_GPT
+	image_pt_tool="sgdisk -p"
+#elif [ "${image_pt_type_str/MBR boot sector/}" != "$image_pt_type" ]; then
+#	image_pt_type=$PT_TYPE_MBR
+#	image_pt_tool="sfdisk -d"
+#else
+#	echo "Partition type not supported." >&2
+#	exit 1
+#fi
+
+if ! which ${image_pt_tool%% *} > /dev/null; then
+	echo "$image_pt_tool is not available." >&2
+	exit 1
+fi
+
+image_pt_table=$($image_pt_tool "$image_file")
+
+PT_getPartSectors(){
+	case $image_pt_type in
+		$PT_TYPE_MBR)
+			if [ $1 = $PART_TYPE_EFI ]; then
+				local part_type_grep="$PART_TYPE_MBR_EFI_GREP"
+			elif [ $1 = $PART_TYPE_LINUX ]; then
+				local part_type_grep="$PART_TYPE_MBR_LINUX_GREP"
+			else
+				echo "Unsupported partition type $1." >&2
+				return 1
+			fi
+			local part_offset=$(echo "$image_pt_table" | tr -s ' ' | grep "$part_type_grep" | grep -o 'start= [0-9]*' | cut -f 2 -d ' ')
+			if [ -z "$part_offset" ]; then
+				echo "Unable to find partition offset." >&2
+				return 1
+			fi
+			local part_size=$(echo "$image_pt_table" | tr -s ' ' | grep "$part_type_grep" | grep -o 'size= [0-9]*' | cut -f 2 -d ' ')
+			if [ -z "$part_size" ]; then
+				echo "Unable to find partition offset." >&2
+				return 1
+			fi
+			echo -n "$part_offset $part_size"
+			;;
+		$PT_TYPE_GPT)
+			if [ $1 = $PART_TYPE_EFI ]; then
+				local part_type_grep="$PART_TYPE_GPT_EFI_GREP"
+			elif [ $1 = $PART_TYPE_LINUX ]; then
+				local part_type_grep="$PART_TYPE_GPT_LINUX_GREP"
+			else
+				echo "Unsupported partition type $1." >&2
+				return 1
+			fi
+			local part_offset=$(echo "$image_pt_table" | tr -s ' ' | grep "$part_type_grep" | (echo -n ' ' && cat) | tr -s ' ' | cut -f 3 -d ' ')
+			if [ -z "$part_offset" ]; then
+				echo "Unable to find partition offset." >&2
+				return 1
+			fi
+			local part_end=$(echo "$image_pt_table" | tr -s ' ' | grep "$part_type_grep" | (echo -n ' ' && cat) | tr -s ' ' | cut -f 4 -d ' ')
+			if [ -z "$part_offset" ]; then
+				echo "Unable to find partition offset." >&2
+				return 1
+			fi
+			local part_size=$((part_end-$part_offset+1))
+			echo -n "$part_offset $part_size"
+			;;
+		*)
+			echo "Unsupported partition table type $image_pt_type." >&2
+			return 1
+			;;
+	esac
+}
+
+image_root_sectors=$(PT_getPartSectors $PART_TYPE_LINUX)
+image_boot_sectors=$(PT_getPartSectors $PART_TYPE_EFI)
+
+OMOUNT_main(){
+	traps_start
+
+	mount -o loop,offset=$((${image_root_sectors%% *}*512)),sizelimit=$((${image_root_sectors##* }*512)) "$image_file" "$image_mount_dir"
+	traps_push sleep 1
+	traps_push umount -l "$image_mount_dir"
+
+	if [ ! -d "$image_mount_dir/boot/efi" ]; then
+		echo "There is no /boot/efi directory in the Linux root." >&2
+		exit 1
+	fi
+
+	mount -o loop,offset=$((${image_boot_sectors%% *}*512)),sizelimit=$((${image_boot_sectors##* }*512)) "$image_file" "$image_mount_dir/boot/efi"
+	traps_push sleep 1
+	traps_push umount -l "$image_mount_dir/boot/efi"
+
+	CHROOT_mount "$image_mount_dir"
+
+	chroot "$image_mount_dir"
+
+	traps_exit || true
+}
+
+OMOUNT_main
