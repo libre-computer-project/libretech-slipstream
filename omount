@@ -20,6 +20,23 @@ if [ ! -d "$2" ]; then
 	exit 1
 fi
 
+if [ ! -z "$3" ]; then
+	if [ ! -f "$3" ]; then
+		echo "$3 is not a file." >&2
+		exit 1
+	fi
+	script_bin=$(head -n 1 "$3")
+	if [ "${#script_bin}" -gt 100 ]; then
+		echo "$3 is not an interpreted script." >&2
+		exit 1
+	elif [ "${script_bin:0:2}" != "#!" ]; then
+		echo "$3 is missing the interpreter header." >&2
+		exit 1
+	fi
+	script_int_path="${script_bin:2}"
+	script="$(readlink -f "$3")"
+fi
+
 image_file="$(readlink -f "$1")"
 image_mount_dir="$(readlink -f "$2")"
 
@@ -133,7 +150,18 @@ OMOUNT_main(){
 
 	CHROOT_mount "$image_mount_dir"
 
-	chroot "$image_mount_dir"
+	if [ ! -z "$script" ]; then
+		if [ ! -e "${image_mount_dir}${script_int_path}" ]; then
+			echo "The script interpreter does not exist on the image." >&2
+			exit 1
+		elif [ ! -x "${image_mount_dir}${script_int_path}" ]; then
+			echo "The script interpreter has no executive privileges." >&2
+			exit 1
+		fi
+		chroot "$image_mount_dir" "$script_int_path" < "$script"
+	else
+		chroot "$image_mount_dir"
+	fi
 
 	traps_exit || true
 }
