@@ -5,8 +5,8 @@ if [ "$USER" != "root" ]; then
 	exit 1
 fi
 
-if [ -z "$1" -o -z "$2" ]; then
-	echo "$0 IMAGE.img ROOT_DIR" >&2
+if [ -z "$1" ]; then
+	echo "$0 IMAGE.img [SCRIPT] [SPACE]" >&2
 	exit 1
 fi
 
@@ -15,30 +15,46 @@ if [ ! -f "$1" ]; then
 	exit 1
 fi
 
-if [ ! -d "$2" ]; then
-	echo "$2 is not a directory." >&2
-	exit 1
-fi
-
-if [ ! -z "$3" ]; then
-	if [ ! -f "$3" ]; then
-		echo "$3 is not a file." >&2
+if [ ! -z "$2" ]; then
+	if [ ! -f "$2" ]; then
+		echo "$2 is not a file." >&2
 		exit 1
 	fi
-	script_bin=$(head -n 1 "$3")
+	script_bin=$(head -n 1 "$2")
 	if [ "${#script_bin}" -gt 100 ]; then
-		echo "$3 is not an interpreted script." >&2
+		echo "$2 is not an interpreted script." >&2
 		exit 1
 	elif [ "${script_bin:0:2}" != "#!" ]; then
-		echo "$3 is missing the interpreter header." >&2
+		echo "$2 is missing the interpreter header." >&2
 		exit 1
 	fi
 	script_int_path="${script_bin:2}"
-	script="$(readlink -f "$3")"
+	script="$(readlink -f "$2")"
+fi
+
+if [ -z "$3" ]; then
+	image_expand=0
+else
+	if ! echo "$3" | grep -E "^[[:digit:]]+[MGT]?$" > /dev/null; then
+		echo "SPACE must be an integer optionally followed by [MGT] unit." >&2
+		exit 1
+	fi
+	image_expand_num=$(echo "$3" | grep -oE "^[[:digit:]]+")
+	image_expand_exp=$(echo "$3" | grep -oE "[MGT]?$")
+	if [ -z "$image_expand_exp" ]; then
+		if [ "$image_expand_num" -lt $((1<<20)) ]; then
+			echo "SPACE must be greater than 1M." >&2
+			exit 1
+		fi
+		if [ "$image_expand_num" -ne "$((image_expand_num>>20<<20))" ]; then
+			echo "SPACE must be a multiple of 1M." >&2
+			exit 1
+		fi
+	fi
+	image_expand="+$3"
 fi
 
 image_file="$(readlink -f "$1")"
-image_mount_dir="$(readlink -f "$2")"
 
 cd $(readlink -f $(dirname ${BASH_SOURCE[0]}))
 
@@ -124,10 +140,19 @@ image_boot_num=$(PT_getPartNum $PART_TYPE_EFI)
 LMOUNT_main(){
 	traps_start
 	
+	if [ "$image_expand" != "0" ]; then
+		truncate -s "$image_expand" "$image_file"
+	fi
+
 	local loop_dev=$(LOOP_setup "$image_file")
 	traps_push LOOP_detach "$loop_dev"
 	
 	if [ ! -b "${loop_dev}p${image_root_num}" ]; then
+		partprobe "$loop_dev"
+	fi
+	
+	if [ "$image_expand" != "0" ]; then
+		echo ", +" | ${image_pt_tool%% *} -N "$image_root_num" "$loop_dev"
 		partprobe "$loop_dev"
 	fi
 
@@ -141,6 +166,8 @@ LMOUNT_main(){
 		exit 1
 	fi
 
+	local image_mount_dir=$(mktemp -d)
+	traps_push rmdir "$image_mount_dir"
 	mount "${loop_dev}p${image_root_num}" "$image_mount_dir"
 	traps_push sleep 1
 	traps_push umount -l "$image_mount_dir"
@@ -155,6 +182,10 @@ LMOUNT_main(){
 	#traps_push umount -l "$image_mount_dir/boot/efi"
 
 	CHROOT_mount "$image_mount_dir"
+	
+	if [ "$image_expand" != "0" ]; then
+		btrfs filesystem resize max "$image_mount_dir"
+	fi
 
 	chroot "$image_mount_dir" mount "${loop_dev}p${image_boot_num}" /boot/efi
 	traps_push chroot "$image_mount_dir" umount /boot/efi

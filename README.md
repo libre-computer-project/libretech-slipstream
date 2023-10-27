@@ -20,9 +20,5 @@ cd libretech-image-mounter
 ./setup.sh # installs pre-requisites
 
 mkdir root
-./lmount IMAGE root [SCRIPT]
+./lmount IMAGE root [SCRIPT] [SPACE]
 ```
-
-## TODO
-
-* Resize support

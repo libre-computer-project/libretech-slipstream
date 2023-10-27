@@ -5,8 +5,8 @@ if [ "$USER" != "root" ]; then
 	exit 1
 fi
 
-if [ -z "$1" -o -z "$2" ]; then
-	echo "$0 IMAGE.img ROOT_DIR" >&2
+if [ -z "$1" ]; then
+	echo "$0 IMAGE.img [SCRIPT]" >&2
 	exit 1
 fi
 
@@ -15,30 +15,24 @@ if [ ! -f "$1" ]; then
 	exit 1
 fi
 
-if [ ! -d "$2" ]; then
-	echo "$2 is not a directory." >&2
-	exit 1
-fi
-
-if [ ! -z "$3" ]; then
-	if [ ! -f "$3" ]; then
-		echo "$3 is not a file." >&2
+if [ ! -z "$2" ]; then
+	if [ ! -f "$2" ]; then
+		echo "$2 is not a file." >&2
 		exit 1
 	fi
-	script_bin=$(head -n 1 "$3")
+	script_bin=$(head -n 1 "$2")
 	if [ "${#script_bin}" -gt 100 ]; then
-		echo "$3 is not an interpreted script." >&2
+		echo "$2 is not an interpreted script." >&2
 		exit 1
 	elif [ "${script_bin:0:2}" != "#!" ]; then
-		echo "$3 is missing the interpreter header." >&2
+		echo "$2 is missing the interpreter header." >&2
 		exit 1
 	fi
 	script_int_path="${script_bin:2}"
-	script="$(readlink -f "$3")"
+	script="$(readlink -f "$2")"
 fi
 
 image_file="$(readlink -f "$1")"
-image_mount_dir="$(readlink -f "$2")"
 
 cd $(readlink -f $(dirname ${BASH_SOURCE[0]}))
 
@@ -135,6 +129,8 @@ image_boot_sectors=$(PT_getPartSectors $PART_TYPE_EFI)
 OMOUNT_main(){
 	traps_start
 
+	local image_mount_dir=$(mktemp -d)
+	traps_push rmdir "$image_mount_dir"
 	mount -o loop,offset=$((${image_root_sectors%% *}*512)),sizelimit=$((${image_root_sectors##* }*512)) "$image_file" "$image_mount_dir"
 	traps_push sleep 1
 	traps_push umount -l "$image_mount_dir"
