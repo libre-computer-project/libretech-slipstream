@@ -1,6 +1,6 @@
 # libretech-image-mounter
 
-This simple tool mounts official Libre Computer images to enable modifications to be performed.
+This simple tool to mount [official Libre Computer images](https://distro.libre.computer/ci/) for modifications to be performed.
 
 Please note that some images already have built-in mechanisms for first boot configuration.
 
@@ -16,6 +16,8 @@ This tool allows you to make changes to the image for productization.
 ```
 git clone https://github.com/libre-computer-project/libretech-image-mounter.git
 cd libretech-image-mounter
+
+./setup.sh # installs pre-requisites
 
 mkdir root
 ./lmount IMAGE root [SCRIPT]
