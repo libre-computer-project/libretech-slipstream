@@ -9,7 +9,7 @@ Please note that some images already have built-in mechanisms for first boot con
 * Ubuntu Server uses cloud-init.
 * Debian Base uses ignition.
 
-This tool allows you to make changes to the image for productization.
+This tool allows you to make changes to the image for productization. Please use a Linux 6.1+ host kernel.
 
 ## Usage
 
@@ -22,3 +22,7 @@ cd libretech-image-mounter
 mkdir root
 ./lmount IMAGE root [SCRIPT]
 ```
+
+## TODO
+
+* Resize support
