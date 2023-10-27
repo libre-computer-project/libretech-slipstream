@@ -29,7 +29,7 @@ cd $(readlink -f $(dirname ${BASH_SOURCE[0]}))
 . lib/loop.sh
 . lib/traps.sh
 
-set -ex
+set -e
 
 PT_TYPE_MBR='mbr'
 PT_TYPE_GPT='gpt'
