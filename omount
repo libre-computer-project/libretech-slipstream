@@ -131,7 +131,7 @@ OMOUNT_main(){
 
 	local image_mount_dir=$(mktemp -d)
 	traps_push rmdir "$image_mount_dir"
-	mount -o loop,offset=$((${image_root_sectors%% *}*512)),sizelimit=$((${image_root_sectors##* }*512)) "$image_file" "$image_mount_dir"
+	mount -o loop,offset=$((${image_root_sectors%% *}*512)),sizelimit=$((${image_root_sectors##* }*512)),noatime,compress=zstd,nossd_spread "$image_file" "$image_mount_dir"
 	traps_push sleep 1
 	traps_push umount -l "$image_mount_dir"
 

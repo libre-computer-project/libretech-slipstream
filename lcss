@@ -206,7 +206,7 @@ LMOUNT_main(){
 
 	local image_mount_dir=$(mktemp -d)
 	traps_push rmdir "$image_mount_dir"
-	mount -o noatime,compress=zstd "${loop_dev}p${image_root_num}" "$image_mount_dir"
+	mount -o noatime,compress=zstd,nossd_spread "${loop_dev}p${image_root_num}" "$image_mount_dir"
 	traps_push sleep 1
 	traps_push umount -l "$image_mount_dir"
 
