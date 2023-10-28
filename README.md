@@ -34,6 +34,9 @@ sudo ./lcss IMAGE [SCRIPT] [EXPAND] [SHRINK]
 * SHRINK : optional parameter - shrink the image while leaving space - int optionally suffixed with  M, G, or T, M assumed
 
 ## Examples
+
+Example installation scripts can be found at [libretech-slipstream-examples](https://github.com/libre-computer-project/libretech-slipstream-examples).
+
 ```
 sudo ./lcss debian-12-gnome-arm64+arm64.img
 # create a virtual environment in debian-12-gnome-arm64+arm64.img for manual customization
@@ -54,4 +57,6 @@ sudo ./lcss debian-12-gnome-arm64+arm64.img ~/app1/install.sh 1G 512M
 * Pre-requisite setup script is targeted for Debian
 * Does not work for changes that require real system
 
-[Additional Information and Support](https://hub.libre.computer/t/libre-computer-slipstream/3125).
+## More
+
+* [Libre Computer Community Page](https://hub.libre.computer/t/libre-computer-slipstream/3125).
