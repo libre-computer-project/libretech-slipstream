@@ -1,7 +1,7 @@
 # libretech-slipstream
 
 Easy to use slipstreaming tool designed to customize [official Libre Computer images](https://distro.libre.computer/ci/) with additional software.
-Ideal for integration and productization of images for deployment with a scripted application installer.
+Ideal for integration and productization of images for deployment with a [scripted application installer](https://github.com/libre-computer-project/libretech-slipstream-examples).
 
 This should not be used for individual deployment initialization. Please use the first boot configuration tool for that.
 
