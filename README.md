@@ -23,11 +23,12 @@ cd libretech-image-mounter
 
 ./setup.sh # installs pre-requisites
 
-sudo ./lmount IMAGE [SCRIPT] [SPACE]
+sudo ./lmount IMAGE [SCRIPT] [EXPAND] [SHRINK]
 ```
 
 ## lmount Parameters
 
 * IMAGE : filename of uncompressed image - please make reflink copy as this tool is destructive
 * SCRIPT : optional parameter - script file to execute instead of dropping to chroot shell
-* SPACE : optional parameter - expanding the image size for additional space - int optionally suffixed with  M, G, or T
+* EXPAND : optional parameter - expand the image for extra space - int optionally suffixed with  M, G, or T, M assumed
+* SHRINK : optional parameter - shrink the image while leaving space - int optionally suffixed with  M, G, or T, M assumed

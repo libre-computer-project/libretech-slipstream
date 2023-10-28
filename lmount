@@ -6,7 +6,7 @@ if [ "$USER" != "root" ]; then
 fi
 
 if [ -z "$1" ]; then
-	echo "$0 IMAGE.img [SCRIPT] [SPACE]" >&2
+	echo "$0 IMAGE.img [SCRIPT] [EXPAND] [SHRINK]" >&2
 	exit 1
 fi
 
@@ -35,23 +35,58 @@ fi
 if [ -z "$3" ]; then
 	image_expand=0
 else
-	if ! echo "$3" | grep -E "^[[:digit:]]+[MGT]?$" > /dev/null; then
-		echo "SPACE must be an integer optionally followed by [MGT] unit." >&2
+	image_expand="${3^^}"
+	if ! echo "$image_expand" | grep -E "^[[:digit:]]+[MGT]?$" > /dev/null; then
+		echo "EXPAND must be an integer optionally followed by [MGT] unit, M assumed." >&2
 		exit 1
 	fi
-	image_expand_num=$(echo "$3" | grep -oE "^[[:digit:]]+")
-	image_expand_exp=$(echo "$3" | grep -oE "[MGT]?$")
+	image_expand_num=$(echo "$image_expand" | grep -oE "^[[:digit:]]+")
+	image_expand_exp=$(echo "$image_expand" | grep -oE "[MGT]?$")
 	if [ -z "$image_expand_exp" ]; then
-		if [ "$image_expand_num" -lt $((1<<20)) ]; then
-			echo "SPACE must be greater than 1M." >&2
-			exit 1
-		fi
-		if [ "$image_expand_num" -ne "$((image_expand_num>>20<<20))" ]; then
-			echo "SPACE must be a multiple of 1M." >&2
-			exit 1
-		fi
+		image_expand=${image_expand}M
 	fi
-	image_expand="+$3"
+	#if [ -z "$image_expand_exp" ]; then
+	#	if [ "$image_expand_num" -lt $((1<<20)) ]; then
+	#		echo "EXPAND must be greater than 1M." >&2
+	#		exit 1
+	#	fi
+	#	if [ "$image_expand_num" -ne "$((image_expand_num>>20<<20))" ]; then
+	#		echo "EXPAND must be a multiple of 1M." >&2
+	#		exit 1
+	#	fi
+	#fi
+	image_expand="+$image_expand"
+fi
+
+if [ -z "$4" ]; then
+	image_shrink=0
+else
+	image_shrink="${4^^}"
+	if ! echo "$image_shrink" | grep -E "^[[:digit:]]+[MGT]?$" > /dev/null; then
+		echo "SHRINK must be an integer optionally followed by [MGT] unit, M assumed." >&2
+		exit 1
+	fi
+	image_shrink_num=$(echo "$image_shrink" | grep -oE "^[[:digit:]]+")
+	image_shrink_exp=$(echo "$image_shrink" | grep -oE "[MGT]?$")
+	if [ -z "$image_shrink_exp" ]; then
+		if [ "$image_shrink_num" -lt $((1<<6)) ]; then
+			echo "SHRINK must be greater than 64M." >&2
+			exit 1
+		fi
+	elif [ "$image_shrink_exp" = "M" ]; then
+		if [ "$image_shrink_num" -lt $((1<<6)) ]; then
+			echo "SHRINK must be greater than 64M." >&2
+			exit 1
+		fi
+		$image_shrink=$image_shrink_num
+	elif [ "$image_shrink_exp" = "G" ]; then
+		$image_shrink=$((image_shrink_num<<10))
+	elif [ "$image_shrink_exp" = "T" ]; then
+		$image_shrink=$((image_shrink_num<<20))
+	else
+		echo "SHRINK unexpected assert error for value $image_shrink." >&2
+		exit 1
+	fi
 fi
 
 image_file="$(readlink -f "$1")"
@@ -143,9 +178,12 @@ LMOUNT_main(){
 	if [ "$image_expand" != "0" ]; then
 		truncate -s "$image_expand" "$image_file"
 	fi
+	
 
 	local loop_dev=$(LOOP_setup "$image_file")
 	traps_push LOOP_detach "$loop_dev"
+	
+	local loop_traps_length=$TRAPS_LENGTH
 	
 	if [ ! -b "${loop_dev}p${image_root_num}" ]; then
 		partprobe "$loop_dev"
@@ -168,7 +206,7 @@ LMOUNT_main(){
 
 	local image_mount_dir=$(mktemp -d)
 	traps_push rmdir "$image_mount_dir"
-	mount "${loop_dev}p${image_root_num}" "$image_mount_dir"
+	mount -o noatime,compress=zstd "${loop_dev}p${image_root_num}" "$image_mount_dir"
 	traps_push sleep 1
 	traps_push umount -l "$image_mount_dir"
 
@@ -202,8 +240,36 @@ LMOUNT_main(){
 	else
 		chroot "$image_mount_dir"
 	fi
+	
+	if [ "$image_shrink" != "0" ]; then
+		#local image_linux_size_b=$(btrfs filesystem show --raw "$image_mount_dir" | grep -Eo "size\\s+[0-9]+" | cut -d " " -f 2)
+		#local image_linux_size=$((image_linux_size_b >> 20))
+		#local image_linux_sect=$((image_linux_size_b >> 9))
+		local image_linux_shrink_step=64
+		local image_shrunk=0
+		while true; do
+			local image_linux_unalloc_b=$(btrfs filesystem usage -b "$image_mount_dir" | grep "Device unallocated" | grep -Eo "[0-9]*")
+			local image_linux_unalloc=$((image_linux_unalloc_b >> 20))
+			if [ "$((image_linux_unalloc - $image_linux_shrink_step))" -le "$image_shrink" ]; then
+				break
+			fi
+			if ! btrfs filesystem resize "-${image_linux_shrink_step}M" "$image_mount_dir"; then
+				break
+			fi
+			local image_shrunk=$((image_shrunk+$image_linux_shrink_step))
+		done
+		
+		traps_popUntilLength "$loop_traps_length"
+		
+		echo ", -${image_shrunk}M" | ${image_pt_tool%% *} -N "$image_root_num" "$loop_dev"
+	
+	fi
 
 	traps_exit || true
+	if [ "$image_shrink" != "0" ]; then
+		truncate -s "-${image_shrunk}M" "$image_file"
+		# move GPT backup table
+	fi
 }
 
 LMOUNT_main
